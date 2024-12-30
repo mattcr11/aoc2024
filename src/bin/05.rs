@@ -1,10 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+};
 
 use itertools::Itertools;
 use nom::{
-    bytes::complete::{tag, take_while},
-    character::{complete::line_ending, is_newline},
-    combinator::all_consuming,
+    bytes::complete::tag,
+    character::complete::line_ending,
     multi::{many0, separated_list1},
     sequence::separated_pair,
     IResult,
@@ -31,7 +33,24 @@ pub fn part_one(input: &str) -> Option<u32> {
 }
 
 pub fn part_two(input: &str) -> Option<u32> {
-    None
+    match Puzzle::try_from(input) {
+        Ok(puzzle) => {
+            let invalid_updates = puzzle.get_invalid_updates();
+            Some(
+                invalid_updates
+                    .into_iter()
+                    .filter_map(|update| {
+                        let reordered_update = puzzle.ensure_update_ordering(update);
+                        Some(reordered_update.get(update.len() / 2).unwrap().clone())
+                    })
+                    .sum::<u32>(),
+            )
+        }
+        Err(_) => {
+            dbg!("Parsing Error");
+            None
+        }
+    }
 }
 
 struct Rules {
@@ -77,6 +96,40 @@ impl Puzzle {
                 (self.check_update(update) == UpdateState::Valid).then_some(update)
             })
             .collect_vec()
+    }
+
+    fn get_invalid_updates(&self) -> Vec<&Vec<u32>> {
+        self.updates
+            .iter()
+            .filter_map(|update| {
+                (self.check_update(update) == UpdateState::Invalid).then_some(update)
+            })
+            .collect_vec()
+    }
+
+    fn ensure_update_ordering(&self, update: &Vec<u32>) -> Vec<u32> {
+        let updated_pages = update.clone().into_iter().collect::<HashSet<u32>>();
+        let mut restricted_rules = self.rules.rule_list.clone();
+        restricted_rules.retain(|k, _| updated_pages.contains(k));
+        restricted_rules.iter_mut().for_each(|(_, hs)| {
+            hs.retain(|after| updated_pages.contains(after));
+        });
+
+        let mut update = update.clone();
+        update.sort_by(|a, b| {
+            if let Some(a_rules) = restricted_rules.get(a) {
+                if a_rules.contains(b) {
+                    return Ordering::Less;
+                }
+            }
+            if let Some(b_rules) = restricted_rules.get(b) {
+                if b_rules.contains(a) {
+                    return Ordering::Greater;
+                }
+            }
+            Ordering::Equal
+        });
+        update
     }
 }
 
@@ -144,6 +197,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(123));
     }
 }
